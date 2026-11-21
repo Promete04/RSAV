@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mando del Roomba</title>
+<style>
+/* Layout: consola — fila 1 conducir + sensores; fila 2 movimientos + canciones; fila 3 motores + luces + comando manual; señales debajo */
+:root {
+  --bg: #eef1f0; --panel: #ffffff; --fg: #17201d; --muted: #5f6d69; --line: #d3dbd8;
+  --accent: #0d6b62; --accent-fg: #ffffff; --warn: #b86e00; --bad: #c4302b; --ok: #1d8a4a;
+  --pad: #e4eae8; --knob: #0d6b62; --key: #ffffff; --key-black: #26302d;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "DejaVu Sans Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0f1514; --panel: #172020; --fg: #e3ebe8; --muted: #8fa09b; --line: #2a3735;
+  --accent: #5fd3c0; --accent-fg: #0b1513; --warn: #f0a640; --bad: #ff6a5e; --ok: #59d18a;
+  --pad: #1e2a29; --knob: #5fd3c0; --key: #e3ebe8; --key-black: #0b1110; color-scheme: dark } }
+* { box-sizing: border-box }
+html, body { margin: 0 }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.45;
+  padding: 20px max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)) }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px }
+header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 5; background: var(--bg); padding-block: 8px }
+h1 { margin: 0; font-size: 1.35rem; font-weight: 650 }
+.pills { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.pill { font-size: 0.8rem; font-weight: 600; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); background: var(--panel) }
+.pill.ok { color: var(--ok); border-color: currentColor }
+.pill.warn { color: var(--warn); border-color: currentColor }
+.pill.bad { color: var(--bad); border-color: currentColor }
+#stopTop { width: auto; font-size: 0.9rem; padding: 6px 14px }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start }
+@media (max-width: 960px) { .grid3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) } }
+@media (max-width: 760px) { .grid, .grid3 { grid-template-columns: minmax(0, 1fr) } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 14px; min-width: 0 }
+h2 { margin: 0; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600 }
+#pad { position: relative; width: min(100%, 300px); aspect-ratio: 1; margin: 0 auto; border-radius: 50%;
+  background: radial-gradient(circle, transparent 32%, var(--line) 32.5%, transparent 33.5%), var(--pad);
+  border: 1px solid var(--line); touch-action: none; cursor: grab; user-select: none }
+#pad::before, #pad::after { content: ""; position: absolute; background: var(--line) }
+#pad::before { left: 50%; top: 8%; bottom: 8%; width: 1px }
+#pad::after { top: 50%; left: 8%; right: 8%; height: 1px }
+#knob { position: absolute; width: 22%; height: 22%; left: 39%; top: 39%; border-radius: 50%; background: var(--knob);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.25); pointer-events: none; z-index: 1 }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap }
+.row > label { color: var(--muted); font-size: 0.85rem; min-width: 84px }
+input[type=range] { flex: 1; min-width: 110px; accent-color: var(--accent) }
+input[type=number], input[type=text], select, textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; min-width: 0 }
+input[type=number] { width: 84px }
+textarea { width: 100%; font-family: var(--mono); font-size: 0.85rem; resize: vertical; min-height: 64px }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 72px }
+button { font: inherit; font-weight: 600; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+  padding: 8px 12px; cursor: pointer }
+button:hover { border-color: var(--accent) }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, #pad:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent) }
+button.danger { background: var(--bad); color: #fff; border-color: var(--bad) }
+button.big { font-size: 1.05rem; padding: 12px 18px; width: 100% }
+button.on { outline: 2px solid var(--accent); outline-offset: 1px }
+.btns { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px }
+.hint { color: var(--muted); font-size: 0.85rem; margin: 0 }
+.hint kbd { font-family: var(--mono); font-size: 0.78rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px }
+.hint code, .mono { font-family: var(--mono); font-size: 0.8rem }
+#msg { min-height: 1.3em; font-size: 0.88rem; color: var(--warn); margin: 0 }
+.status { font-family: var(--mono); font-size: 0.85rem; padding: 6px 10px; border-radius: 6px; background: var(--pad) }
+#confirmFull { border: 1px solid var(--warn); border-radius: 6px; padding: 10px 12px; font-size: 0.88rem; display: grid; gap: 8px }
+svg.robot { width: 100%; max-width: 280px; margin: 0 auto; display: block }
+svg .body { fill: var(--pad); stroke: var(--line); stroke-width: 2 }
+svg .sens { fill: var(--line); transition: fill 0.1s }
+svg .sens.on { fill: var(--bad) }
+svg .lb.on { fill: var(--warn) }
+svg .bumper { fill: none; stroke: var(--line); stroke-width: 8; stroke-linecap: round; transition: stroke 0.1s }
+svg .bumper.on { stroke: var(--bad) }
+svg .wheel { fill: var(--muted) }
+svg .wheel.on { fill: var(--bad) }
+svg text { fill: var(--muted); font: 600 11px var(--sans) }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 0.9rem }
+dt { color: var(--muted) }
+dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right }
+.bars { display: grid; grid-template-columns: auto minmax(0, 1fr) 54px; gap: 6px 10px; align-items: center; font-size: 0.85rem }
+.bars span:first-child { color: var(--muted) }
+.bar { height: 8px; border-radius: 4px; background: var(--pad); overflow: hidden }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.15s }
+.bars .num { text-align: right; min-width: 0 }
+.piano { display: flex; gap: 2px; overflow-x: auto; padding-bottom: 4px }
+.piano button { min-width: 34px; height: 74px; padding: 0 0 6px; display: flex; align-items: flex-end; justify-content: center;
+  font-size: 0.72rem; background: var(--key); color: #17201d; border-color: var(--line) }
+.piano button.black { background: var(--key-black); color: #e3ebe8; height: 52px; min-width: 28px }
+.piano button:active { background: var(--accent); color: var(--accent-fg) }
+.checks { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.9rem }
+.checks label { display: flex; gap: 6px; align-items: center; cursor: pointer }
+.log { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); overflow-x: auto; white-space: nowrap; margin: 0 }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Mando del Roomba</h1>
+    <div class="pills">
+      <span class="pill" id="pConn">Conectando…</span><span class="pill" id="pMode">Modo —</span><span class="pill" id="pBat">Batería —</span>
+      <button class="danger" id="stopTop" type="button">PARAR</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="hDrive">
+      <h2 id="hDrive">Conducir</h2>
+      <div id="pad" tabindex="0" aria-label="Joystick: arrastra para conducir"><div id="knob"></div></div>
+      <div class="row"><label for="speed">Velocidad</label><input id="speed" type="range" min="50" max="500" step="10" value="200"><span class="num" id="speedV">200 mm/s</span></div>
+      <div class="row"><label for="turn">Giro</label><input id="turn" type="range" min="0.2" max="1" step="0.05" value="0.6"><span class="num" id="turnV">60 %</span></div>
+      <button class="danger big" id="stop" type="button">PARAR (espacio)</button>
+      <p class="hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> o flechas para conducir, <kbd>espacio</kbd> para parar. Si dejas de pulsar, el robot se para solo en menos de medio segundo.</p>
+      <p id="msg" role="status"></p>
+    </section>
+
+    <section class="card" aria-labelledby="hSens">
+      <h2 id="hSens">Sensores</h2>
+      <svg class="robot" viewBox="0 0 240 240" role="img" aria-label="Robot visto desde arriba, frente hacia arriba">
+        <circle class="body" cx="120" cy="125" r="95"/>
+        <path id="bumpL" class="bumper" d="M 33 95 A 95 95 0 0 1 116 30"/>
+        <path id="bumpR" class="bumper" d="M 124 30 A 95 95 0 0 1 207 95"/>
+        <g id="lbs"></g>
+        <circle id="cL" class="sens" cx="45" cy="95" r="9"/>
+        <circle id="cFL" class="sens" cx="90" cy="45" r="9"/>
+        <circle id="cFR" class="sens" cx="150" cy="45" r="9"/>
+        <circle id="cR" class="sens" cx="195" cy="95" r="9"/>
+        <rect id="wL" class="wheel" x="38" y="110" width="16" height="44" rx="5"/>
+        <rect id="wR" class="wheel" x="186" y="110" width="16" height="44" rx="5"/>
+        <text x="120" y="14" text-anchor="middle">FRENTE</text>
+        <text x="120" y="130" text-anchor="middle" id="encT">—</text>
+      </svg>
+      <p class="hint">Rojo: choque, desnivel o rueda en el aire. Ámbar: el bumper de luz ve un obstáculo cerca.</p>
+      <dl>
+        <dt>Voltaje</dt><dd id="dV">—</dd>
+        <dt>Corriente</dt><dd id="dA">—</dd>
+        <dt>Carga</dt><dd id="dQ">—</dd>
+        <dt>Temperatura</dt><dd id="dT">—</dd>
+        <dt>Cargador</dt><dd id="dC">—</dd>
+        <dt>Sobrecorriente</dt><dd id="dO">—</dd>
+      </dl>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="hMoves">
+      <h2 id="hMoves">Movimientos precisos</h2>
+      <p class="hint">El robot mide con los encoders de las ruedas y se para solo al llegar, si choca, si se levanta una rueda o si pulsas PARAR. Usa la velocidad de arriba.</p>
+      <div class="btns">
+        <button type="button" data-steps='[{"type":"move","mm":500}]'>Adelante 50 cm</button>
+        <button type="button" data-steps='[{"type":"move","mm":-300}]'>Atrás 30 cm</button>
+        <button type="button" data-steps='[{"type":"turn","deg":90}]'>Girar 90° izq.</button>
+        <button type="button" data-steps='[{"type":"turn","deg":-90}]'>Girar 90° der.</button>
+        <button type="button" data-steps='[{"type":"turn","deg":180}]'>Media vuelta</button>
+        <button type="button" data-steps='[{"type":"turn","deg":360}]'>Vuelta entera</button>
+        <button type="button" id="bSquare">Cuadrado 40 cm</button>
+        <button type="button" data-steps='[{"type":"arc","v":150,"r":300,"s":12.6}]'>Círculo r 30 cm</button>
+        <button type="button" id="bZigzag">Zigzag</button>
+      </div>
+      <div class="row">
+        <label for="custMm">Distancia</label><input id="custMm" type="number" min="-500" max="500" value="100"><span class="hint">cm</span>
+        <button type="button" id="bCustMove">Avanzar</button>
+      </div>
+      <div class="row">
+        <label for="custDeg">Ángulo</label><input id="custDeg" type="number" min="-1080" max="1080" value="45"><span class="hint">° (+ izq.)</span>
+        <button type="button" id="bCustTurn">Girar</button>
+      </div>
+      <div class="status" id="job">sin movimiento</div>
+    </section>
+
+    <section class="card" aria-labelledby="hSongs">
+      <h2 id="hSongs">Canciones</h2>
+      <div class="row">
+        <label for="preset">Plantilla</label>
+        <select id="preset"></select>
+      </div>
+      <div class="row">
+        <label for="slot">Ranura</label>
+        <select id="slot"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+        <span class="hint">La 4 la usa el piano.</span>
+      </div>
+      <textarea id="notes" spellcheck="false" aria-label="Notas de la canción"></textarea>
+      <p class="hint" id="songInfo">Formato: <code>Nota+octava:duración</code>, duración en 1/64 s (16 = ¼ s). <code>R</code> = silencio. Máximo 16 notas. Ejemplo: <code>C4:16 E4:16 G4:32</code></p>
+      <div class="btns">
+        <button type="button" class="primary" id="bSongPlay">Guardar y tocar</button>
+        <button type="button" id="bSongSave">Solo guardar</button>
+        <button type="button" id="bSongReplay">Tocar ranura</button>
+      </div>
+      <div class="piano" id="piano" aria-label="Piano: toca una nota"></div>
+      <p class="hint">Tocar necesita el modo Safe: se activa solo. En Passive el robot ignora la orden.</p>
+    </section>
+  </div>
+
+  <div class="grid3">
+    <section class="card" aria-labelledby="hMotors">
+      <h2 id="hMotors">Motores de limpieza</h2>
+      <div class="row"><label for="mMain">Cepillo</label><input id="mMain" type="range" min="-127" max="127" value="0"><span class="num" id="mMainV">0</span></div>
+      <div class="row"><label for="mSide">Lateral</label><input id="mSide" type="range" min="-127" max="127" value="0"><span class="num" id="mSideV">0</span></div>
+      <div class="row"><label for="mVac">Aspiración</label><input id="mVac" type="range" min="0" max="127" value="0"><span class="num" id="mVacV">0</span></div>
+      <div class="btns">
+        <button type="button" id="bMotorsHalf">Todo al 50 %</button>
+        <button type="button" class="danger" id="bMotorsOff">Apagar</button>
+      </div>
+      <p class="hint">Valores de −127 a 127 (el signo cambia el sentido). Los cambios se aplican al soltar el control.</p>
+    </section>
+
+    <section class="card" aria-labelledby="hLeds">
+      <h2 id="hLeds">Luces</h2>
+      <div class="checks">
+        <label><input type="checkbox" class="led" value="1"> Suciedad</label>
+        <label><input type="checkbox" class="led" value="2"> Spot</label>
+        <label><input type="checkbox" class="led" value="4"> Base</label>
+        <label><input type="checkbox" class="led" value="8"> Revisar robot</label>
+      </div>
+      <div class="row"><label for="ledColor">Color botón</label><input id="ledColor" type="range" min="0" max="255" value="0"><span class="num" id="ledColorV">verde</span></div>
+      <div class="row"><label for="ledInt">Intensidad</label><input id="ledInt" type="range" min="0" max="255" value="255"><span class="num" id="ledIntV">255</span></div>
+      <button type="button" id="bLeds">Aplicar luces</button>
+      <p class="hint">Son las luces de la especificación (series 500/600). El anillo del 980 puede no responder a todas.</p>
+    </section>
+
+    <section class="card" aria-labelledby="hRaw">
+      <h2 id="hRaw">Comando manual</h2>
+      <input id="raw" type="text" class="mono" placeholder="89 00 64 00 01" aria-label="Bytes en hexadecimal" autocomplete="off">
+      <button type="button" id="bRaw">Enviar bytes</button>
+      <p class="hint">Bytes en hexadecimal, empezando por el opcode. Bloqueados: <code>07</code> Reset, <code>81</code> Baud, <code>94</code>/<code>96</code> Stream, <code>AD</code> Stop. Las ruedas no paran solas con este comando: usa PARAR.</p>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="hSignals">
+      <h2 id="hSignals">Señales</h2>
+      <div class="bars" id="bars"></div>
+    </section>
+
+    <section class="card" aria-labelledby="hMode">
+      <h2 id="hMode">Modo y acciones</h2>
+      <div class="btns">
+        <button type="button" class="primary" data-cmd="safe" id="bSafe">Tomar control</button>
+        <button type="button" data-cmd="passive" id="bPassive">Soltar</button>
+        <button type="button" id="bFull">Modo Full…</button>
+        <button type="button" data-cmd="clean">Limpiar</button>
+        <button type="button" data-cmd="spot">Spot</button>
+        <button type="button" data-cmd="max">Limpieza máx.</button>
+        <button type="button" data-cmd="dock">Ir a la base</button>
+        <button type="button" id="bBeep">Pitar</button>
+      </div>
+      <div id="confirmFull" hidden>
+        <span>Full desactiva las protecciones: no se para ante escaleras ni si lo levantas. Úsalo solo con el robot a la vista.</span>
+        <div class="row"><button type="button" class="primary" data-cmd="full">Activar Full</button><button type="button" id="cancelFull">Cancelar</button></div>
+      </div>
+      <p class="hint"><b>Tomar control</b> pone el modo Safe: puedes conducir y el robot se para solo ante un desnivel o si se levanta una rueda. <b>Soltar</b> lo devuelve al modo normal. Limpiar, Spot, Limpieza máx. e Ir a la base usan la navegación del propio robot.</p>
+      <p class="log" id="log"></p>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const MODES = ["Apagado", "Normal (Passive)", "Control (Safe)", "Control total (Full)"];
+const CHG = ["no carga", "reacondicionando", "carga completa", "carga lenta", "esperando", "fallo de carga"];
+let state = null, input = { x: 0, y: 0 }, keys = new Set(), padActive = false, driving = false;
+
+// light-bumper dots along the front arc
+$("lbs").innerHTML = [-75, -45, -15, 15, 45, 75].map((a, i) => { const r = 80, t = (a - 90) * Math.PI / 180;
+  return `<circle class="sens lb" id="lb${i}" cx="${120 + r * Math.cos(t)}" cy="${125 + r * Math.sin(t)}" r="5"/>`; }).join("");
+
+async function post(path, body) {
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); say(e.error || `Error ${r.status}`); return false; }
+    return true;
+  } catch { say("No hay conexión con el servidor. ¿Sigue corriendo server.py?"); return false; }
+}
+function say(t) { $("msg").textContent = t; }
+const cmd = c => post("/api/cmd", { cmd: c });
+
+// ---- speed settings ----
+const speed = () => +$("speed").value, turn = () => +$("turn").value;
+$("speed").oninput = () => $("speedV").textContent = `${speed()} mm/s`;
+$("turn").oninput = () => $("turnV").textContent = `${Math.round(turn() * 100)} %`;
+
+// ---- joystick ----
+const pad = $("pad"), knob = $("knob");
+function setKnob(x, y) { knob.style.left = `${39 + x * 39}%`; knob.style.top = `${39 + y * 39}%`; }
+function padPos(e) {
+  const r = pad.getBoundingClientRect();
+  let x = (e.clientX - r.left) / r.width * 2 - 1, y = (e.clientY - r.top) / r.height * 2 - 1;
+  const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
+  if (Math.abs(x) < 0.08) x = 0; if (Math.abs(y) < 0.08) y = 0;
+  input = { x, y }; setKnob(x, y);
+}
+pad.addEventListener("pointerdown", e => { padActive = true; pad.setPointerCapture(e.pointerId); padPos(e); });
+pad.addEventListener("pointermove", e => { if (padActive) padPos(e); });
+const release = () => { padActive = false; input = { x: 0, y: 0 }; setKnob(0, 0); };
+pad.addEventListener("pointerup", release); pad.addEventListener("pointercancel", release);
+
+// ---- keyboard ----
+const KEYMAP = { ArrowUp: "u", w: "u", W: "u", ArrowDown: "d", s: "d", S: "d", ArrowLeft: "l", a: "l", A: "l", ArrowRight: "r", d: "r", D: "r" };
+const typing = el => ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) && el.type !== "range" && el.type !== "checkbox";
+addEventListener("keydown", e => {
+  if (typing(e.target)) return;
+  if (e.key === " ") { e.preventDefault(); emergency(); return; }
+  if (KEYMAP[e.key]) { e.preventDefault(); keys.add(KEYMAP[e.key]); }
+});
+addEventListener("keyup", e => { if (KEYMAP[e.key]) keys.delete(KEYMAP[e.key]); });
+addEventListener("blur", () => { keys.clear(); release(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) { keys.clear(); release(); } });
+
+function current() {
+  if (padActive) return input;
+  const x = (keys.has("r") ? 1 : 0) - (keys.has("l") ? 1 : 0), y = (keys.has("d") ? 1 : 0) - (keys.has("u") ? 1 : 0);
+  return { x, y };
+}
+
+// send drive commands at 10 Hz while there is input; stop once when it ends
+setInterval(async () => {
+  const { x, y } = current();
+  if (!x && !y) { if (driving) { driving = false; post("/api/stop"); } return; }
+  if (state && state.mode === 1 && !driving) { say("Tomando control (modo Safe)…"); await cmd("safe"); }
+  if (state && state.mode !== null && state.mode < 2 && driving) say("El robot ha vuelto a modo normal (¿rueda en el aire o desnivel?). Pulsa Tomar control.");
+  const v = -y * speed(), w = x * speed() * turn();
+  driving = true;
+  post("/api/drive", { left: Math.round(v + w), right: Math.round(v - w) });
+}, 100);
+
+function emergency() { keys.clear(); release(); driving = false; post("/api/stop"); say("Parado."); }
+$("stop").onclick = emergency; $("stopTop").onclick = emergency;
+
+// ---- precise moves ----
+const runSteps = steps => post("/api/move", { speed: speed(), steps }).then(ok => ok && say(""));
+document.querySelectorAll("[data-steps]").forEach(b => b.onclick = () => runSteps(JSON.parse(b.dataset.steps)));
+$("bSquare").onclick = () => runSteps(Array.from({ length: 4 }, () => [{ type: "move", mm: 400 }, { type: "turn", deg: 90 }]).flat());
+$("bZigzag").onclick = () => runSteps([{ type: "turn", deg: 45 }, ...Array.from({ length: 4 }, (_, i) => [{ type: "move", mm: 300 }, { type: "turn", deg: i % 2 ? 90 : -90 }]).flat(), { type: "turn", deg: -45 }]);
+$("bCustMove").onclick = () => runSteps([{ type: "move", mm: Math.round(+$("custMm").value * 10) }]);
+$("bCustTurn").onclick = () => runSteps([{ type: "turn", deg: Math.round(+$("custDeg").value) }]);
+
+// ---- songs ----
+const PRESETS = {
+  "Pitido": "C5:8 E5:8 G5:12",
+  "Escala de do": "C4:12 D4:12 E4:12 F4:12 G4:12 A4:12 B4:12 C5:24",
+  "Himno de la alegría (Beethoven)": "E4:16 E4:16 F4:16 G4:16 G4:16 F4:16 E4:16 D4:16 C4:16 C4:16 D4:16 E4:16 E4:24 D4:8 D4:32",
+  "Cumpleaños feliz": "G4:12 G4:4 A4:16 G4:16 C5:16 B4:32 G4:12 G4:4 A4:16 G4:16 D5:16 C5:32",
+  "Victoria": "C4:8 E4:8 G4:8 C5:16 G4:8 C5:32",
+  "Triste": "G4:24 F#4:24 F4:24 E4:48",
+  "Alarma": "A5:8 R:4 A5:8 R:4 A5:8 R:4 A5:8 R:16",
+};
+$("preset").innerHTML = Object.keys(PRESETS).map(k => `<option>${k}</option>`).join("");
+$("preset").onchange = () => { $("notes").value = PRESETS[$("preset").value]; parseSong(); };
+const SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+function parseSong() {
+  const toks = $("notes").value.trim().split(/[\s,]+/).filter(Boolean), notes = [];
+  for (const t of toks) {
+    const m = t.match(/^([A-Ga-g])([#b]?)(-?\d)(?::(\d+))?$|^[Rr-](?::(\d+))?$/);
+    if (!m) return songError(`No entiendo «${t}». Usa por ejemplo C4:16, F#4:8 o R:8.`);
+    const dur = +(m[4] || m[5] || 16);
+    if (dur < 1 || dur > 255) return songError(`Duración fuera de rango en «${t}» (1..255).`);
+    if (!m[1]) { notes.push([0, dur]); continue; }
+    const midi = 12 * (+m[3] + 1) + SEMI[m[1].toUpperCase()] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0);
+    if (midi < 31 || midi > 127) return songError(`«${t}» está fuera del rango del robot (G1 a G9).`);
+    notes.push([midi, dur]);
+  }
+  if (!notes.length) return songError("Escribe al menos una nota.");
+  if (notes.length > 16) return songError(`Son ${notes.length} notas; el máximo es 16.`);
+  const secs = notes.reduce((s, n) => s + n[1], 0) / 64;
+  $("songInfo").textContent = `${notes.length} notas, ${secs.toFixed(2)} s.`;
+  $("songInfo").style.color = "";
+  return notes;
+}
+function songError(t) { $("songInfo").textContent = t; $("songInfo").style.color = "var(--bad)"; return null; }
+$("notes").oninput = parseSong;
+$("bSongPlay").onclick = () => { const n = parseSong(); if (n) post("/api/song", { slot: +$("slot").value, notes: n, play: true }); };
+$("bSongSave").onclick = () => { const n = parseSong(); if (n) post("/api/song", { slot: +$("slot").value, notes: n }).then(ok => ok && say(`Guardada en la ranura ${$("slot").value}.`)); };
+$("bSongReplay").onclick = () => post("/api/song", { slot: +$("slot").value, play: true });
+$("bBeep").onclick = () => post("/api/song", { slot: 4, notes: [[72, 8], [76, 8], [79, 12]], play: true });
+$("notes").value = PRESETS["Pitido"]; parseSong();
+
+// piano: C4..C6, each key stores a one-note song in slot 4 and plays it
+const piano = $("piano");
+for (let midi = 60; midi <= 84; midi++) {
+  const name = NAMES[midi % 12], b = document.createElement("button");
+  b.type = "button"; b.className = name.includes("#") ? "black" : "";
+  b.textContent = name.includes("#") ? "" : name + (Math.floor(midi / 12) - 1);
+  b.setAttribute("aria-label", name + (Math.floor(midi / 12) - 1));
+  b.addEventListener("pointerdown", () => post("/api/song", { slot: 4, notes: [[midi, 16]], play: true }));
+  piano.appendChild(b);
+}
+
+// ---- cleaning motors ----
+const motorIds = ["mMain", "mSide", "mVac"];
+function sendMotors() { post("/api/motors", { main: +$("mMain").value, side: +$("mSide").value, vacuum: +$("mVac").value }); }
+motorIds.forEach(id => { $(id).oninput = () => $(id + "V").textContent = $(id).value; $(id).onchange = sendMotors; });
+function setMotors(m, s, v) { [m, s, v].forEach((val, i) => { $(motorIds[i]).value = val; $(motorIds[i] + "V").textContent = val; }); sendMotors(); }
+$("bMotorsHalf").onclick = () => setMotors(64, 64, 64);
+$("bMotorsOff").onclick = () => setMotors(0, 0, 0);
+
+// ---- LEDs ----
+$("ledColor").oninput = () => { const v = +$("ledColor").value; $("ledColorV").textContent = v < 40 ? "verde" : v > 215 ? "rojo" : v; };
+$("ledInt").oninput = () => $("ledIntV").textContent = $("ledInt").value;
+$("bLeds").onclick = () => post("/api/leds", {
+  bits: [...document.querySelectorAll(".led:checked")].reduce((s, c) => s + +c.value, 0),
+  color: +$("ledColor").value, intensity: +$("ledInt").value });
+
+// ---- raw command ----
+$("bRaw").onclick = () => post("/api/raw", { hex: $("raw").value }).then(ok => ok && say(`Enviado: ${$("raw").value}`));
+$("raw").addEventListener("keydown", e => { if (e.key === "Enter") $("bRaw").click(); });
+
+// ---- modes ----
+document.querySelectorAll("[data-cmd]").forEach(b => b.onclick = async () => {
+  if (await cmd(b.dataset.cmd)) say("");
+  if (b.dataset.cmd === "full") $("confirmFull").hidden = true;
+});
+$("bFull").onclick = () => $("confirmFull").hidden = false;
+$("cancelFull").onclick = () => $("confirmFull").hidden = true;
+
+// ---- signal bars ----
+const BARS = [
+  ["Desnivel izq.", s => s.cliffSignal[0], 4095], ["Desnivel del. izq.", s => s.cliffSignal[1], 4095],
+  ["Desnivel del. der.", s => s.cliffSignal[2], 4095], ["Desnivel der.", s => s.cliffSignal[3], 4095],
+  ["Luz izq.", s => s.lightBumpSignal[0], 4095], ["Luz del. izq.", s => s.lightBumpSignal[1], 4095],
+  ["Luz centro izq.", s => s.lightBumpSignal[2], 4095], ["Luz centro der.", s => s.lightBumpSignal[3], 4095],
+  ["Luz del. der.", s => s.lightBumpSignal[4], 4095], ["Luz der.", s => s.lightBumpSignal[5], 4095],
+  ["Pared", s => s.wallSignal, 1023], ["Suciedad", s => s.dirt, 255],
+  ["Motor rueda izq. (mA)", s => s.motorCurrent.left, 1000, true], ["Motor rueda der. (mA)", s => s.motorCurrent.right, 1000, true],
+  ["Cepillo (mA)", s => s.motorCurrent.mainBrush, 1000, true], ["Lateral (mA)", s => s.motorCurrent.sideBrush, 500, true],
+];
+$("bars").innerHTML = BARS.map((b, i) => `<span>${b[0]}</span><div class="bar"><i id="bar${i}"></i></div><span class="num" id="barV${i}">—</span>`).join("")
+  + `<span>Canción sonando</span><span></span><span class="num" id="songNow">—</span><span>Progreso (stasis)</span><span></span><span class="num" id="stasis">—</span>`;
+
+// ---- telemetry ----
+const on = (id, v) => $(id).classList.toggle("on", !!v);
+function render(s) {
+  state = s;
+  const c = $("pConn");
+  c.textContent = s.connected ? "Conectado" : (s.error ? "Sin robot" : "Esperando datos…");
+  c.className = "pill " + (s.connected ? "ok" : "bad");
+  $("pMode").textContent = s.mode == null ? "Modo —" : MODES[s.mode] || `Modo ${s.mode}`;
+  $("pMode").className = "pill " + (s.mode === 3 ? "warn" : s.mode === 2 ? "ok" : "");
+  ["bSafe", "bPassive"].forEach(id => $(id).classList.remove("on"));
+  if (s.mode === 2) $("bSafe").classList.add("on"); if (s.mode === 1) $("bPassive").classList.add("on");
+  const b = s.battery, pct = b.capacity ? Math.round(b.mAh / b.capacity * 100) : null;
+  // On the 980 the OI charging-state packet stays 0 while the lithium pack charges,
+  // so judge by current: positive current means energy is going into the battery.
+  const charging = b.mA != null && b.mA > 50;
+  $("pBat").textContent = pct == null ? "Batería —" : `Batería ${pct} %${charging ? " ⚡" : ""}`;
+  $("pBat").className = "pill " + (pct == null ? "" : pct < 15 ? "bad" : pct < 30 ? "warn" : "ok");
+  $("dV").textContent = b.mV == null ? "—" : `${(b.mV / 1000).toFixed(2)} V`;
+  $("dA").textContent = b.mA == null ? "—" : `${b.mA} mA`;
+  $("dQ").textContent = b.mAh == null ? "—" : `${b.mAh} / ${b.capacity} mAh`;
+  $("dT").textContent = b.tempC == null ? "—" : `${b.tempC} °C`;
+  $("dC").textContent = b.mA == null ? "—"
+    : charging ? `cargando${b.onDock ? " en base" : ""}`
+    : b.onDock ? "en base, sin cargar"
+    : b.chargingState ? (CHG[b.chargingState] || b.chargingState) : "descargando";
+  $("dC").style.color = charging ? "var(--ok)" : "";
+  const oc = Object.entries(s.overcurrent).filter(([, v]) => v).map(([k]) => ({ leftWheel: "rueda izq.", rightWheel: "rueda der.", mainBrush: "cepillo", sideBrush: "cepillo lateral" })[k]);
+  $("dO").textContent = oc.length ? oc.join(", ") : "no"; $("dO").style.color = oc.length ? "var(--bad)" : "";
+  on("bumpL", s.bump.left); on("bumpR", s.bump.right);
+  on("cL", s.cliff.left); on("cFL", s.cliff.frontLeft); on("cFR", s.cliff.frontRight); on("cR", s.cliff.right);
+  on("wL", s.wheelDrop.left); on("wR", s.wheelDrop.right);
+  s.lightBump.forEach((v, i) => on("lb" + i, v));
+  $("encT").textContent = s.encoders.left == null ? "—" : `enc ${s.encoders.left} · ${s.encoders.right}`;
+  $("job").textContent = s.job;
+  BARS.forEach((bar, i) => {
+    const v = bar[1](s);
+    $("barV" + i).textContent = v == null ? "—" : v;
+    $("bar" + i).style.width = v == null ? "0" : `${Math.min(100, Math.abs(v) / bar[2] * 100)}%`;
+  });
+  $("songNow").textContent = s.songPlaying ? "sí" : "no";
+  $("stasis").textContent = s.stasis ? "avanza" : "quieto";
+  $("log").textContent = s.log ? `log: ${s.log}` : "";
+  if (!s.connected && s.error) say(`No llega el robot: ${s.error}. ¿Está enchufado el micro-USB?`);
+}
+async function poll() {
+  try { const r = await fetch("/api/state", { cache: "no-store" }); render(await r.json()); }
+  catch { $("pConn").textContent = "Servidor parado"; $("pConn").className = "pill bad"; }
+  setTimeout(poll, 200);
+}
+poll();
+</script>
+</body>
+</html>

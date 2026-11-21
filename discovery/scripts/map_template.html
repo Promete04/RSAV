@@ -1,0 +1,222 @@
+<title>Recorrido del Roomba</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: plano a la izquierda (alto, como la casa), panel de reproducción y notas a la derecha; en móvil, una columna */
+:root {
+  --bg: #f3f5f4; --surface: #ffffff; --fg: #18211f; --muted: #5d6b67; --line: #d5dcd9;
+  --grid: #e3e8e6; --t0: #8fd3c4; --t1: #0b5a63; --dock: #c47a0e; --alert: #c8322b; --accent: #0b5a63;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111816; --surface: #18211f; --fg: #e4ece9; --muted: #93a39e; --line: #2c3936;
+  --grid: #1f2a27; --t0: #1f6f6a; --t1: #9ff0dc; --dock: #f0a43a; --alert: #ff6b5f; --accent: #7fe0cb; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111816; --surface: #18211f; --fg: #e4ece9; --muted: #93a39e; --line: #2c3936;
+  --grid: #1f2a27; --t0: #1f6f6a; --t1: #9ff0dc; --dock: #f0a43a; --alert: #ff6b5f; --accent: #7fe0cb; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 40px }
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 24px }
+header h1 { font-size: 1.6rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance }
+header p { margin: 4px 0 0; color: var(--muted) }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line) }
+.stat { padding: 12px 14px 12px 0; display: grid; gap: 2px }
+.stat dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted) }
+.stat dd { margin: 0; font-family: var(--mono); font-size: 1.15rem; font-variant-numeric: tabular-nums }
+.stat dd small { font-size: 0.75rem; color: var(--muted) }
+.main { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 24px; align-items: start }
+@media (max-width: 760px) { .main { grid-template-columns: minmax(0, 1fr) } }
+.map { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-width: 0 }
+.map canvas { display: block; width: 100%; touch-action: none }
+.panel { display: grid; gap: 20px; min-width: 0 }
+.panel h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0 0 8px; font-weight: 500 }
+.controls { display: flex; gap: 10px; align-items: center }
+button { font: inherit; font-weight: 500; background: var(--accent); color: var(--surface); border: 0; border-radius: 4px; padding: 6px 14px; cursor: pointer; min-width: 92px }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent) }
+.readout { font-family: var(--mono); font-size: 0.85rem; font-variant-numeric: tabular-nums; color: var(--muted); margin-top: 8px; display: grid; grid-template-columns: auto 1fr; gap: 2px 14px }
+.readout b { color: var(--fg); font-weight: 500 }
+.timeline canvas { display: block; width: 100%; height: 64px }
+.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.9rem }
+.legend li { display: flex; gap: 10px; align-items: center }
+.sw { width: 28px; height: 10px; border-radius: 2px; flex: none }
+.sw.grad { background: linear-gradient(90deg, var(--t0), var(--t1)) }
+.sw.dock { background: repeating-linear-gradient(90deg, var(--dock) 0 6px, transparent 6px 9px) }
+.sw.foot { background: var(--t1); opacity: 0.18 }
+.sw.dot { width: 12px; height: 12px; border-radius: 50%; margin: 0 8px }
+label.tog { display: flex; gap: 8px; align-items: center; font-size: 0.9rem; cursor: pointer }
+.notes { font-size: 0.88rem; color: var(--muted); max-width: 65ch }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px }
+.notes code { font-family: var(--mono); font-size: 0.82rem; color: var(--fg) }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Recorrido del Roomba</h1>
+    <p id="sub"></p>
+  </header>
+
+  <dl class="stats" id="stats"></dl>
+
+  <div class="main">
+    <div class="map"><canvas id="map" aria-label="Plano del recorrido del robot"></canvas></div>
+    <div class="panel">
+      <section>
+        <h2>Reproducir</h2>
+        <div class="controls">
+          <button id="play" type="button">Reproducir</button>
+          <input id="scrub" type="range" min="0" value="0" aria-label="Momento del recorrido">
+        </div>
+        <div class="readout" id="readout"></div>
+      </section>
+      <section class="timeline">
+        <h2>Fase y batería</h2>
+        <canvas id="tl" aria-label="Fase de la misión y batería a lo largo del tiempo"></canvas>
+      </section>
+      <section>
+        <h2>Leyenda</h2>
+        <ul class="legend">
+          <li><span class="sw grad"></span>Limpiando (claro = inicio, oscuro = final)</li>
+          <li><span class="sw dock"></span>Volviendo a la base</li>
+          <li><span class="sw foot"></span>Huella del robot (35 cm de ancho)</li>
+          <li><span class="sw dot" style="background:var(--fg)"></span>Base (origen 0,0)</li>
+          <li><span class="sw dot" style="background:var(--alert)"></span>Atascado / levantado (error 13)</li>
+        </ul>
+        <label class="tog" style="margin-top:10px"><input id="foot" type="checkbox" checked> Mostrar huella</label>
+      </section>
+      <section class="notes">
+        <h2>Cómo leerlo</h2>
+        <ul>
+          <li>Posición por odometría del propio robot (<code>pose</code>), en cm desde la base. El eje x es hacia delante al salir de la base.</li>
+          <li>Faltan los primeros ~30 s (salida de la base): el registro arrancó después del inicio.</li>
+          <li>El robot envía la posición cada pocos segundos; entre muestras se une con línea recta.</li>
+          <li>Al final aparece error 13 (ruedas en el aire) y luego carga: parece que lo llevaron a mano a la base, por eso el último punto no está en el origen.</li>
+          <li>El área barrida es una estimación a partir de la huella de 35 cm sobre una rejilla de 5 cm.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+const P = __DATA__, PH = __PHASES__, S = __STATS__;
+const ES = { run: "limpiando", hmUsrDock: "volviendo a la base", hmMidMsn: "volviendo a cargar", hmPostMsn: "volviendo (fin)", stop: "parado", stuck: "atascado", charge: "cargando", other: "otro" };
+const $ = id => document.getElementById(id);
+const fmtT = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
+$("sub").textContent = `${S.file.replace(/^run-(\d{4}-\d\d-\d\d)_(\d\d)(\d\d)(\d\d)\.csv$/, "$1, $2:$3")} · ${S.n} posiciones registradas`;
+const stat = (k, v, u = "") => `<div class="stat"><dt>${k}</dt><dd>${v}${u ? ` <small>${u}</small>` : ""}</dd></div>`;
+$("stats").innerHTML = stat("Duración", fmtT(S.dur), "min") + stat("Distancia", S.dist_m, "m") + stat("Área barrida", "≈" + S.area_m2, "m²")
+  + stat("Extensión", `${S.w_m}×${S.h_m}`, "m") + stat("Batería", `${S.bat0}→${S.bat1}`, "%") + stat("Incidencias", P.filter((p, i) => p[6] && (!i || !P[i - 1][6])).length, "error 13");
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const hex = c => { const m = c.match(/^#(..)(..)(..)$/); return m ? m.slice(1).map(h => parseInt(h, 16)) : [128, 128, 128]; };
+const mix = (a, b, t) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
+
+const xs = P.map(p => p[1]).concat(0), ys = P.map(p => p[2]).concat(0);
+const pad = 40, minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad, minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
+const W = maxX - minX, H = maxY - minY;
+const cv = $("map"), ctx = cv.getContext("2d"), tl = $("tl"), tctx = tl.getContext("2d");
+let k = P.length - 1, scale = 1, showFoot = true;
+$("scrub").max = P.length - 1; $("scrub").value = k;
+
+function size() {
+  const dpr = window.devicePixelRatio || 1, w = cv.parentElement.clientWidth - 16;
+  const h = Math.min(w * H / W, window.innerHeight * 0.78);
+  const cw = Math.min(w, h * W / H);
+  cv.style.width = cw + "px"; cv.style.height = h + "px"; cv.style.margin = "0 auto";
+  cv.width = cw * dpr; cv.height = h * dpr; scale = cw * dpr / W;
+  const tw = tl.clientWidth; tl.width = tw * dpr; tl.height = 64 * dpr;
+  draw();
+}
+const X = x => (x - minX) * scale, Y = y => (maxY - y) * scale;
+
+function draw() {
+  const g = css("--grid"), fg = css("--fg"), mut = css("--muted"), dock = css("--dock"), al = css("--alert");
+  const t0 = hex(css("--t0")), t1 = hex(css("--t1")), dpr = window.devicePixelRatio || 1;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  // 50 cm grid, labelled every metre
+  ctx.lineWidth = 1; ctx.font = `${11 * dpr}px ${css("--mono")}`; ctx.fillStyle = mut;
+  for (let x = Math.ceil(minX / 50) * 50; x <= maxX; x += 50) {
+    ctx.strokeStyle = g; ctx.beginPath(); ctx.moveTo(X(x), 0); ctx.lineTo(X(x), cv.height); ctx.stroke();
+    if (x % 100 === 0) ctx.fillText(`${x / 100} m`, X(x) + 3 * dpr, cv.height - 5 * dpr);
+  }
+  for (let y = Math.ceil(minY / 50) * 50; y <= maxY; y += 50) {
+    ctx.strokeStyle = g; ctx.beginPath(); ctx.moveTo(0, Y(y)); ctx.lineTo(cv.width, Y(y)); ctx.stroke();
+    if (y % 100 === 0 && y !== 0) ctx.fillText(`${y / 100} m`, 4 * dpr, Y(y) - 4 * dpr);
+  }
+  ctx.lineCap = ctx.lineJoin = "round";
+  if (showFoot) {
+    ctx.globalAlpha = 0.14; ctx.strokeStyle = mix(t0, t1, 1); ctx.lineWidth = 35 * scale;
+    ctx.beginPath(); P.slice(0, k + 1).forEach((p, i) => i ? ctx.lineTo(X(p[1]), Y(p[2])) : ctx.moveTo(X(p[1]), Y(p[2]))); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  for (let i = 1; i <= k; i++) {
+    const a = P[i - 1], b = P[i], ph = PH[b[4]];
+    ctx.setLineDash(ph.startsWith("hm") ? [6 * dpr, 4 * dpr] : []);
+    ctx.strokeStyle = ph.startsWith("hm") ? dock : mix(t0, t1, i / (P.length - 1));
+    ctx.lineWidth = 2.2 * dpr; ctx.beginPath(); ctx.moveTo(X(a[1]), Y(a[2])); ctx.lineTo(X(b[1]), Y(b[2])); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // dock at origin
+  ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(X(0), Y(0), 6 * dpr, 0, 7); ctx.fill();
+  ctx.font = `600 ${12 * dpr}px ${css("--sans")}`; ctx.fillText("Base", X(0) + 10 * dpr, Y(0) + 4 * dpr);
+  // stuck markers
+  P.slice(0, k + 1).forEach((p, i) => { if (p[6] && (!i || !P[i - 1][6])) {
+    ctx.strokeStyle = al; ctx.lineWidth = 2.5 * dpr; const r = 6 * dpr, x = X(p[1]), y = Y(p[2]);
+    ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke(); } });
+  // robot at current sample, with heading
+  const c = P[k], rx = X(c[1]), ry = Y(c[2]), th = c[3] * Math.PI / 180, rr = 17.5 * scale;
+  ctx.fillStyle = css("--surface"); ctx.strokeStyle = fg; ctx.lineWidth = 2 * dpr;
+  ctx.beginPath(); ctx.arc(rx, ry, rr, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx + Math.cos(th) * rr, ry - Math.sin(th) * rr); ctx.stroke();
+  drawTimeline(); readout();
+}
+
+function drawTimeline() {
+  const dpr = window.devicePixelRatio || 1, w = tl.width, h = tl.height, T = P[P.length - 1][0];
+  const band = 14 * dpr, t0 = hex(css("--t0")), t1 = hex(css("--t1"));
+  tctx.clearRect(0, 0, w, h);
+  for (let i = 1; i < P.length; i++) {
+    const ph = PH[P[i][4]];
+    tctx.fillStyle = ph === "run" ? mix(t0, t1, i / (P.length - 1)) : ph.startsWith("hm") ? css("--dock") : ph === "stuck" ? css("--alert") : css("--muted");
+    tctx.fillRect(P[i - 1][0] / T * w, 0, Math.max(1, (P[i][0] - P[i - 1][0]) / T * w + 0.5), band);
+  }
+  const top = band + 8 * dpr, bh = h - top - 14 * dpr, lo = Math.min(...P.map(p => p[5])) - 2, hi = Math.max(...P.map(p => p[5])) + 2;
+  const by = v => top + (hi - v) / (hi - lo) * bh;
+  tctx.strokeStyle = css("--fg"); tctx.lineWidth = 1.5 * dpr; tctx.beginPath();
+  P.forEach((p, i) => (i ? tctx.lineTo : tctx.moveTo).call(tctx, p[0] / T * w, by(p[5]))); tctx.stroke();
+  tctx.fillStyle = css("--muted"); tctx.font = `${10.5 * dpr}px ${css("--mono")}`;
+  tctx.fillText(`${P[0][5]} %`, 2 * dpr, by(P[0][5]) - 3 * dpr);
+  const lt = `${P[P.length - 1][5]} %`; tctx.fillText(lt, w - tctx.measureText(lt).width - 2 * dpr, by(P[P.length - 1][5]) - 3 * dpr);
+  tctx.fillText(fmtT(T), w - tctx.measureText(fmtT(T)).width, h - 1 * dpr); tctx.fillText("0:00", 0, h - 1 * dpr);
+  const cx = P[k][0] / T * w; tctx.strokeStyle = css("--accent"); tctx.lineWidth = 2 * dpr;
+  tctx.beginPath(); tctx.moveTo(cx, 0); tctx.lineTo(cx, h - 14 * dpr); tctx.stroke();
+}
+
+function readout() {
+  const p = P[k];
+  $("readout").innerHTML = `<span>tiempo</span><b>${fmtT(p[0])}</b><span>posición</span><b>${(p[1] / 100).toFixed(2)}, ${(p[2] / 100).toFixed(2)} m</b>`
+    + `<span>rumbo</span><b>${p[3]}°</b><span>fase</span><b>${ES[PH[p[4]]] || PH[p[4]]}${p[6] ? " · error " + p[6] : ""}</b><span>batería</span><b>${p[5]} %</b>`;
+}
+
+let timer = null;
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function stop() { clearInterval(timer); timer = null; $("play").textContent = "Reproducir"; }
+$("play").onclick = () => {
+  if (timer) return stop();
+  if (k >= P.length - 1) k = 0;
+  $("play").textContent = "Pausa";
+  timer = setInterval(() => { k = Math.min(P.length - 1, k + (reduce ? 20 : 3)); $("scrub").value = k; draw(); if (k >= P.length - 1) stop(); }, 30);
+};
+$("scrub").oninput = e => { stop(); k = +e.target.value; draw(); };
+$("foot").onchange = e => { showFoot = e.target.checked; draw(); };
+window.addEventListener("resize", size);
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+document.fonts && document.fonts.ready.then(draw);
+size();
+</script>
